@@ -413,13 +413,14 @@
 
     <div class="today-list-wrap">
       <div class="today-list-head">
-        <span>รายการที่บันทึกวันนี้</span>
+        <span>รายการที่บันทึกล่าสุด (3 วัน)</span>
         <span class="today-list-count" id="todayCount-receive">0 รายการ</span>
       </div>
       <div class="rows-wrap">
         <table class="log today-list-table" id="todayTable-receive">
           <thead>
             <tr>
+              <th>วันที่</th>
               <th>สินค้า</th>
               <th>หลุมผลิต</th>
               <th class="qty-cell">จำนวน</th>
@@ -428,7 +429,7 @@
           </thead>
           <tbody id="todayBody-receive"></tbody>
         </table>
-        <div class="empty-state" id="todayEmpty-receive" style="display:none;">ยังไม่มีรายการที่บันทึกวันนี้</div>
+        <div class="empty-state" id="todayEmpty-receive" style="display:none;">ยังไม่มีรายการที่บันทึกในช่วง 3 วันที่ผ่านมา</div>
       </div>
     </div>
   </section>
@@ -469,13 +470,14 @@
 
     <div class="today-list-wrap">
       <div class="today-list-head">
-        <span>รายการที่บันทึกวันนี้</span>
+        <span>รายการที่บันทึกล่าสุด (3 วัน)</span>
         <span class="today-list-count" id="todayCount-dispatch">0 รายการ</span>
       </div>
       <div class="rows-wrap">
         <table class="log today-list-table" id="todayTable-dispatch">
           <thead>
             <tr>
+              <th>วันที่</th>
               <th>สินค้า</th>
               <th class="qty-cell">จำนวน</th>
               <th>รายละเอียดเพิ่มเติม</th>
@@ -483,7 +485,7 @@
           </thead>
           <tbody id="todayBody-dispatch"></tbody>
         </table>
-        <div class="empty-state" id="todayEmpty-dispatch" style="display:none;">ยังไม่มีรายการที่บันทึกวันนี้</div>
+        <div class="empty-state" id="todayEmpty-dispatch" style="display:none;">ยังไม่มีรายการที่บันทึกในช่วง 3 วันที่ผ่านมา</div>
       </div>
     </div>
   </section>
@@ -522,13 +524,14 @@
 
     <div class="today-list-wrap">
       <div class="today-list-head">
-        <span>รายการที่บันทึกวันนี้</span>
+        <span>รายการที่บันทึกล่าสุด (3 วัน)</span>
         <span class="today-list-count" id="todayCount-damage">0 รายการ</span>
       </div>
       <div class="rows-wrap">
         <table class="log today-list-table" id="todayTable-damage">
           <thead>
             <tr>
+              <th>วันที่</th>
               <th>สินค้า</th>
               <th class="qty-cell">จำนวน</th>
               <th>รายละเอียดเพิ่มเติม</th>
@@ -536,7 +539,7 @@
           </thead>
           <tbody id="todayBody-damage"></tbody>
         </table>
-        <div class="empty-state" id="todayEmpty-damage" style="display:none;">ยังไม่มีรายการที่บันทึกวันนี้</div>
+        <div class="empty-state" id="todayEmpty-damage" style="display:none;">ยังไม่มีรายการที่บันทึกในช่วง 3 วันที่ผ่านมา</div>
       </div>
     </div>
   </section>
@@ -969,6 +972,7 @@ async function syncNow(silent){
             dest: r.dest || undefined,
             doc: r.doc || undefined,
             staffName: r.staffName || undefined,
+            createdAt: r.createdAt || undefined,
             synced: true
           });
         }
@@ -1028,6 +1032,7 @@ async function forceOverwriteFromSheet(){
         dest: r.dest || undefined,
         doc: r.doc || undefined,
         staffName: r.staffName || undefined,
+        createdAt: r.createdAt || undefined,
         synced: true
       }));
       saveLog(LOG);
@@ -1073,6 +1078,27 @@ document.getElementById('btnClearLocal').addEventListener('click', ()=>{
 // misconfigured — this makes the app correct either way).
 function todayStr(){
   return new Intl.DateTimeFormat('en-CA', { timeZone:'Asia/Bangkok' }).format(new Date());
+}
+// Bangkok-local calendar date (YYYY-MM-DD) of an ISO timestamp — used to check
+// when an entry was actually SAVED, as opposed to which day it's dated for.
+function bangkokDateOf(isoTimestamp){
+  const d = new Date(isoTimestamp);
+  if(isNaN(d.getTime())) return null;
+  return new Intl.DateTimeFormat('en-CA', { timeZone:'Asia/Bangkok' }).format(d);
+}
+// Rolling window of the last n Bangkok-local calendar dates, including today.
+// Built from todayStr() (already Bangkok-anchored) so it stays correct
+// regardless of the device's own timezone setting.
+function recentBangkokDates(n){
+  const base = new Date(todayStr() + 'T00:00:00');
+  const dates = [];
+  const p = x => String(x).padStart(2,'0');
+  for(let i=0;i<n;i++){
+    const d = new Date(base);
+    d.setDate(d.getDate() - i);
+    dates.push(`${d.getFullYear()}-${p(d.getMonth()+1)}-${p(d.getDate())}`);
+  }
+  return dates;
 }
 // Google Sheets sometimes silently converts a plain "2026-07-20" string into a
 // real date/datetime cell, which then comes back from Apps Script as a full
@@ -1408,7 +1434,7 @@ function saveType(type){
     const entry = {
       id: uid(), date: d.date, type,
       code: d.code, desc: p ? p.desc : d.code, dia: p ? p.dia : null,
-      qty, synced: false
+      qty, synced: false, createdAt: new Date().toISOString()
     };
     if(needsPit){ entry.pit = d.pit; }
     entry.staffName = d.staffName || '';
@@ -1632,8 +1658,13 @@ function buildEditRow(e, labelMap){
 // form. Always filters by the real current date, so it naturally shows an
 // empty list once a new day starts (no special midnight handling needed).
 function renderTodayList(type){
-  const today = todayStr();
-  const entries = LOG.filter(e => e.type === type && e.date === today).slice().reverse();
+  // Filter by when the entry was actually SAVED (createdAt), not by the
+  // transaction date the user picked — so backdated entries entered recently
+  // still show up here, regardless of which day they're dated for. Shows a
+  // rolling 3-day window (today + previous 2 days) since data entry here is
+  // routinely backdated rather than same-day.
+  const recentDates = new Set(recentBangkokDates(3));
+  const entries = LOG.filter(e => e.type === type && recentDates.has(bangkokDateOf(e.createdAt))).slice().reverse();
   const tbody = document.getElementById('todayBody-'+type);
   const empty = document.getElementById('todayEmpty-'+type);
   const countEl = document.getElementById('todayCount-'+type);
@@ -1644,6 +1675,7 @@ function renderTodayList(type){
     const tr = document.createElement('tr');
     if(type === 'receive'){
       tr.innerHTML = `
+        <td>${fmtDateTH(e.date)}</td>
         <td>${e.desc}<br><span class="size-chip mono">${e.code}</span></td>
         <td>${e.pit || '-'}</td>
         <td class="qty-cell">${e.qty.toLocaleString('th-TH')}</td>
@@ -1651,6 +1683,7 @@ function renderTodayList(type){
       `;
     } else {
       tr.innerHTML = `
+        <td>${fmtDateTH(e.date)}</td>
         <td>${e.desc}<br><span class="size-chip mono">${e.code}</span></td>
         <td class="qty-cell">${e.qty.toLocaleString('th-TH')}</td>
         <td>${extraDetail(e)}</td>
