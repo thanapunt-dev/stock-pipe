@@ -1132,9 +1132,9 @@ function openCalendarPopup(anchorEl, currentIso, onSelect){
   const popup = document.createElement('div');
   popup.className = 'date-popup';
   popup.style.position = 'fixed';
-  popup.style.top = (rect.bottom + 4) + 'px';
   popup.style.left = Math.max(4, Math.min(rect.left, window.innerWidth - 250)) + 'px';
   popup.style.zIndex = '1000';
+  popup.style.visibility = 'hidden'; // positioned invisibly first, then placed once its real height is known
 
   let base = currentIso ? new Date(currentIso + 'T00:00:00') : new Date(todayStr() + 'T00:00:00');
   if(isNaN(base.getTime())) base = new Date(todayStr() + 'T00:00:00');
@@ -1181,6 +1181,23 @@ function openCalendarPopup(anchorEl, currentIso, onSelect){
   }
   render();
   document.body.appendChild(popup);
+
+  // Now that it's rendered, place it using its real height: below the field
+  // if there's room, otherwise above it — and never past the screen edges.
+  // (Fixes the popup extending off the bottom of the screen with no way to
+  // scroll down to the cut-off days when the date field sits low on the page.)
+  const popupHeight = popup.offsetHeight;
+  const spaceBelow = window.innerHeight - rect.bottom;
+  let top;
+  if(spaceBelow >= popupHeight + 4){
+    top = rect.bottom + 4;
+  } else if(rect.top - popupHeight - 4 >= 0){
+    top = rect.top - popupHeight - 4;
+  } else {
+    top = Math.max(4, window.innerHeight - popupHeight - 4);
+  }
+  popup.style.top = top + 'px';
+  popup.style.visibility = 'visible';
 
   function onDocClick(ev){
     if(!popup.contains(ev.target) && ev.target !== anchorEl){ closeAllCalendars(); }
