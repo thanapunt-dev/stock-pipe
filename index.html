@@ -1466,7 +1466,11 @@ function saveType(type){
 
   LOG = LOG.concat(entries);
   saveLog(LOG);
-  entries.forEach(entry => pushLogEntry(entry)); // best-effort background sync
+  // Push one at a time (not all at once) — Apps Script Web Apps don't reliably
+  // handle many simultaneous requests hitting the same script/spreadsheet, and
+  // firing every row's push in parallel could silently drop some of them when
+  // saving several rows at once. Sequential pushes avoid that race entirely.
+  (async () => { for (const entry of entries) { await pushLogEntry(entry); } })();
 
   // reset form
   tbody.innerHTML = '';
